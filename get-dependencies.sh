@@ -4,31 +4,8 @@ set -eu
 
 ARCH=$(uname -m)
 
-# halloy only ships Linux binaries for x86_64
-if [ "$ARCH" != "x86_64" ]; then
-	echo "ERROR: halloy does not provide Linux binaries for $ARCH" >&2
-	exit 1
-fi
-
-if [ "${DEVEL_RELEASE-}" = 1 ]; then
-	VERSION=nightly
-else
-	VERSION=$(curl -sIL -o /dev/null -w '%{url_effective}' \
-		"https://github.com/squidowl/halloy/releases/latest" | sed 's|.*/tag/||')
-fi
-
-if [ -z "$VERSION" ]; then
-	echo "ERROR: Unable to determine the version of halloy" >&2
-	exit 1
-fi
-echo "$VERSION" > ~/version
-
 echo "Installing package dependencies..."
 echo "---------------------------------------------------------------"
-# winit dlopens these from the X11 backend, so they must be present here
-# for quick-sharun to find and deploy them. alsa-lib and libxcb are not
-# needed here, the setup action already installs them (pulseaudio-alsa and
-# libx11) and quick-sharun aborts if a linked library is missing anyway.
 pacman -Syu --noconfirm \
 	libxcursor          \
 	libxinerama         \
@@ -40,12 +17,15 @@ echo "Installing debloated packages..."
 echo "---------------------------------------------------------------"
 get-debloated-pkgs --add-mesa --prefer-nano
 
-echo "Downloading halloy ${VERSION}..."
+echo "Downloading halloy..."
 echo "---------------------------------------------------------------"
-wget --retry-connrefused --tries=30 \
-	"https://github.com/squidowl/halloy/releases/download/${VERSION}/halloy-${VERSION}-x86_64-linux.tar.gz" \
-	-O ./halloy.tar.gz
+TARBALL_LINK=$(wget https://api.github.com/repos/squidowl/halloy/releases -O - \
+	| sed 's/[()",{} ]/\n/g' | grep -vi 'nightly' | grep -o -m 1 "https.*/halloy.*$ARCH-linux.tar.gz")
+wget --retry-connrefused --tries=30 "$TARBALL_LINK" -O /tmp/tarball.tar.gz
 
-mkdir -p ./halloy
-tar -xvf ./halloy.tar.gz -C ./halloy
-rm -f ./halloy.tar.gz
+mkdir -p ./AppDir
+tar -xvf /tmp/tarball.tar.gz -C ./AppDir
+cp -v ./AppDir/share/applications/org.squidowl.halloy.desktop           ./AppDir
+cp -v ./AppDir/share/icons/hicolor/256x256/apps/org.squidowl.halloy.png ./AppDir
+
+echo "$TARBALL_LINK" | awk -F'/' '{print $(NF-1)}' > ~/version
